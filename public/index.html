@@ -53,7 +53,7 @@
     async function draw() {
       const deviceId = getOrCreateDeviceId();
       try {
-        const res = await fetch("http://localhost:3000/api/draw", {
+        const res = await fetch("/api/draw", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ deviceId, winRate: WIN_RATE })

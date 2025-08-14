@@ -1,25 +1,22 @@
--- Crear tablas
+-- Crear rol/DB si lo haces como superusuario (opcional):
+-- CREATE USER sorteo WITH PASSWORD 'sorteopass';
+-- CREATE DATABASE sorteo OWNER sorteo;
+-- GRANT ALL PRIVILEGES ON DATABASE sorteo TO sorteo;
+
+-- Tablas
 CREATE TABLE IF NOT EXISTS winners (
-  device_id VARCHAR(100) PRIMARY KEY,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  device_id text PRIMARY KEY,
+  created_at timestamptz DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS prize_tokens (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  claimed_by VARCHAR(100) NULL,
-  claimed_at TIMESTAMP NULL DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  id serial PRIMARY KEY,
+  claimed_by text NULL,
+  claimed_at timestamptz NULL
+);
 
--- Sembrar 10 tokens si la tabla está vacía
+-- Sembrar 10 tokens si está vacía
 INSERT INTO prize_tokens (claimed_by, claimed_at)
-SELECT NULL, NULL FROM dual
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
-UNION ALL SELECT NULL, NULL
+SELECT NULL, NULL
+FROM generate_series(1,10)
 WHERE (SELECT COUNT(*) FROM prize_tokens) = 0;
