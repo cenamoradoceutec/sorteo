@@ -1,162 +1,126 @@
+// server.js
 import express from "express";
-import { Pool } from "pg";
+import cors from "cors";
+import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
+import pkg from "pg"; // PostgreSQL
+const { Pool } = pkg;
 
+// ---------------- CONFIGURACIONES ----------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// ====== Config ======
 const PORT = process.env.PORT || 3000;
-const DEFAULT_WIN_RATE = Number(process.env.DEFAULT_WIN_RATE || 0.15);
-// Informativo (el tope real lo imponen los tokens en BD)
-const MAX_PRIZES = Number(process.env.MAX_PRIZES || 10);
 
-// ====== Pool Postgres ======
+// Conexión PostgreSQL
 const pool = new Pool({
-  host: process.env.PGHOST || "127.0.0.1",
-  port: Number(process.env.PGPORT || 5432),
+  host: process.env.PGHOST || "localhost",
+  user: process.env.PGUSER || "postgres",
+  password: process.env.PGPASSWORD || "postgres",
   database: process.env.PGDATABASE || "sorteo",
-  user: process.env.PGUSER || "sorteo",
-  password: process.env.PGPASSWORD || "sorteopass",
-  max: 10,
-  idleTimeoutMillis: 30000
+  port: process.env.PGPORT || 5432,
 });
 
-// ====== CORS simple (opcional, quita si sirves el frontend desde el mismo origen) ======
-const ALLOWED_ORIGINS = [
-  "http://127.0.0.1:5500",
-  "http://localhost:5500",
-  "http://localhost:3000"
-];
-function cors(req, res, next) {
-  const origin = req.headers.origin;
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  }
-  if (req.method === "OPTIONS") return res.sendStatus(204);
-  next();
-}
-
-// ====== App ======
+// ---------------- APP EXPRESS ----------------
 const app = express();
-app.use(cors);
-app.use(express.json());
-// Si pones tu index.html en ./public, descomenta esta línea:
-// app.use(express.static(path.join(__dirname, "public")));
 
-// ====== Helpers ======
-async function getRemainingPrizes(client) {
-  const { rows } = await client.query(
-    "SELECT COUNT(*)::int AS remaining FROM prize_tokens WHERE claimed_by IS NULL"
-  );
-  return rows[0]?.remaining ?? 0;
-}
+// CORS para permitir peticiones desde otros orígenes
+app.use(cors());
+app.use(bodyParser.json());
 
-async function hasWonBefore(client, deviceId) {
-  const { rows } = await client.query(
-    "SELECT 1 FROM winners WHERE device_id = $1 LIMIT 1",
-    [deviceId]
-  );
-  return rows.length > 0;
-}
+// Servir archivos estáticos desde carpeta public
+app.use(express.static(path.join(__dirname, "public")));
 
-/**
- * Reclama 1 token de premio de forma atómica.
- * Estrategia: CTE que selecciona 1 fila libre con FOR UPDATE SKIP LOCKED y la actualiza.
- * Si retorna una fila → premio asignado. Si no → no hay tokens libres.
- */
-async function tryClaimPrize(client, deviceId) {
-  const sql = `
-    WITH c AS (
-      SELECT id
-      FROM prize_tokens
-      WHERE claimed_by IS NULL
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1
-    )
-    UPDATE prize_tokens p
-    SET claimed_by = $1, claimed_at = now()
-    FROM c
-    WHERE p.id = c.id
-    RETURNING p.id;
-  `;
-  const { rows } = await client.query(sql, [deviceId]);
-  return rows.length === 1;
-}
-
-// ====== Endpoints ======
-
-// Estado (útil para pruebas)
-app.get("/api/state", async (_req, res) => {
-  const client = await pool.connect();
-  try {
-    const remaining = await getRemainingPrizes(client);
-    const { rows } = await client.query("SELECT COUNT(*)::int AS total FROM winners");
-    const awarded = rows[0]?.total ?? 0;
-    res.json({ ok: true, max: MAX_PRIZES, awarded, remaining });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: "internal_error" });
-  } finally {
-    client.release();
-  }
+// Ruta principal para servir index.html
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Sorteo
+// ---------------- API ----------------
+// Crear tabla si no existe
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS winners (
+        id SERIAL PRIMARY KEY,
+        device_id TEXT UNIQUE NOT NULL,
+        won BOOLEAN NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log("Tabla verificada/creada correctamente");
+  } catch (err) {
+    console.error("Error creando tabla:", err);
+  }
+})();
+
+const MAX_PRIZES = 10;
+
+// Ruta del sorteo
 app.post("/api/draw", async (req, res) => {
-  const { deviceId, winRate } = req.body || {};
-  if (!deviceId || typeof deviceId !== "string") {
-    return res.status(400).json({ ok: false, error: "deviceId requerido" });
+  const { deviceId } = req.body;
+
+  if (!deviceId) {
+    return res.json({ ok: false, error: "Falta deviceId" });
   }
 
-  const rate = Number.isFinite(Number(winRate)) ? Number(winRate) : DEFAULT_WIN_RATE;
-
-  const client = await pool.connect();
   try {
-    // 1) Si ya ganó, no vuelve a ganar
-    if (await hasWonBefore(client, deviceId)) {
-      const remaining = await getRemainingPrizes(client);
-      return res.json({ ok: true, won: false, reason: "already_winner", remaining });
-    }
-
-    // 2) Azar: si pierde, no tocamos tokens
-    const luck = Math.random() < rate;
-    if (!luck) {
-      const remaining = await getRemainingPrizes(client);
-      return res.json({ ok: true, won: false, remaining });
-    }
-
-    // 3) Intento de reclamo atómico (en una transacción por claridad)
-    await client.query("BEGIN");
-    const claimed = await tryClaimPrize(client, deviceId);
-    if (!claimed) {
-      await client.query("ROLLBACK");
-      return res.json({ ok: true, won: false, reason: "no_prizes_left", remaining: 0 });
-    }
-
-    // 4) Registrar ganador (idempotencia)
-    await client.query(
-      "INSERT INTO winners (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING",
+    // ¿Ya ganó antes este dispositivo?
+    const prev = await pool.query(
+      "SELECT won FROM winners WHERE device_id = $1",
       [deviceId]
     );
-    await client.query("COMMIT");
 
-    const remaining = await getRemainingPrizes(client);
-    return res.json({ ok: true, won: true, remaining });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error(e);
-    res.status(500).json({ ok: false, error: "internal_error" });
-  } finally {
-    client.release();
+    if (prev.rows.length > 0) {
+      return res.json({
+        ok: true,
+        won: prev.rows[0].won,
+        remaining: MAX_PRIZES - (await countWinners()),
+        reason: "already_winner",
+      });
+    }
+
+    // ¿Quedan premios?
+    const winnersCount = await countWinners();
+    if (winnersCount >= MAX_PRIZES) {
+      await pool.query(
+        "INSERT INTO winners(device_id, won) VALUES($1, $2)",
+        [deviceId, false]
+      );
+      return res.json({
+        ok: true,
+        won: false,
+        remaining: 0,
+        reason: "no_prizes_left",
+      });
+    }
+
+    // Decidir aleatoriamente si gana (30% chance aquí)
+    const winChance = Math.random() < 0.3;
+    const won = winChance;
+
+    await pool.query(
+      "INSERT INTO winners(device_id, won) VALUES($1, $2)",
+      [deviceId, won]
+    );
+
+    return res.json({
+      ok: true,
+      won,
+      remaining: MAX_PRIZES - (await countWinners()),
+    });
+  } catch (err) {
+    console.error("Error en sorteo:", err);
+    return res.json({ ok: false, error: "Error en servidor" });
   }
 });
 
-// Start
+async function countWinners() {
+  const result = await pool.query("SELECT COUNT(*) FROM winners WHERE won = true");
+  return parseInt(result.rows[0].count, 10);
+}
+
+// ---------------- INICIO SERVIDOR ----------------
 app.listen(PORT, () => {
-  console.log(`✅ API Sorteo (Postgres) en http://localhost:${PORT}`);
+  console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
