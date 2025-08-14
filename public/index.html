@@ -1,133 +1,195 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sorteo QR</title>
-  <style>
-    :root { --bg:#0f172a; --ok:#10b981; --txt:#e5e7eb; }
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;}
-    body{display:grid;place-items:center;background:radial-gradient(1200px 800px at 50% 0%,#1f2937, var(--bg)); color:var(--txt)}
-    .card{max-width:560px;width:92%;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));
-          border:1px solid rgba(255,255,255,.08); padding:28px;border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,.35); text-align:center}
-    .pill{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;letter-spacing:.3px;border:1px dashed rgba(255,255,255,.25);opacity:.85}
-    h1{margin:10px 0 6px;font-size:clamp(22px,4vw,30px)}
-    .result{margin:18px 0 10px;font-size:clamp(18px,3.8vw,22px);font-weight:500;line-height:1.4;white-space:pre-line}
-    .win{color:var(--ok);font-weight:600}
-    .lose{color:#e5e7eb}
-    .sub{opacity:.85}
-    .tiny{font-size:12px;opacity:.6;margin-top:12px}
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>¡Bienvenido!</h1>
-    <div id="result" class="result">…</div>
-    <p id="hint" class="sub"></p>
-    <div class="tiny" id="left"></div>
-  </main>
-
-  <script>
-    const WIN_RATE = 0.15;
-    const DEVICE_KEY = "qr_device_id";
-
-    const resultEl = document.getElementById("result");
-    const hintEl   = document.getElementById("hint");
-    const leftEl   = document.getElementById("left");
-
-    function getOrCreateDeviceId() {
-      try {
-        let id = localStorage.getItem(DEVICE_KEY);
-        if (!id) {
-          id = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
-            (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-          );
-          localStorage.setItem(DEVICE_KEY, id);
-        }
-        return id;
-      } catch {
-        return crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2);
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Sorteo QR</title>
+    <style>
+      :root {
+        --bg: #003863;
+        --ok: #00c1d4;
+        --txt: #e5e7eb;
       }
-    }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial;
+      }
+      .logobp {
+        width: 250px;
+        margin-bottom: 60px;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: radial-gradient(1200px 800px at 50% 0%, #003863, var(--bg));
+        color: var(--txt);
+      }
+      .card {
+        max-width: 560px;
+        width: 92%;
+        padding: 28px;
+        text-align: center;
+      }
+      .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.3px;
+        border: 1px dashed rgba(255, 255, 255, 0.25);
+        opacity: 0.85;
+      }
+      h1 {
+        margin: 10px 0 6px;
+        font-size: clamp(22px, 4vw, 30px);
+      }
+      .result {
+        margin: 18px 0 10px;
+        font-size: clamp(18px, 3.8vw, 22px);
+        font-weight: 500;
+        line-height: 1.4;
+        white-space: pre-line;
+      }
+      .win {
+        color: #00c1d4;
+        font-weight: 600;
+      }
+      .lose {
+        color: #e5e7eb;
+      }
+      .sub {
+        opacity: 0.85;
+      }
+      .tiny {
+        font-size: 12px;
+        opacity: 0.6;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <img src="logo.svg" class="logobp">
+      <div id="result" class="result">…</div>
+      <p id="hint" class="sub"></p>
+       <!-- <div class="tiny" id="left"></div> -->
+    </main>
 
-    async function draw() {
-      const deviceId = getOrCreateDeviceId();
-      try {
-        const res = await fetch("/api/draw", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId, winRate: WIN_RATE })
-        });
-        const data = await res.json();
+    <script>
+      const WIN_RATE = 0.15;
+      const DEVICE_KEY = "qr_device_id";
 
-        if (!data.ok) {
-          resultEl.textContent = "Error al procesar el sorteo";
+      const resultEl = document.getElementById("result");
+      const hintEl = document.getElementById("hint");
+      //const leftEl = document.getElementById("left");
+
+      function getOrCreateDeviceId() {
+        try {
+          let id = localStorage.getItem(DEVICE_KEY);
+          if (!id) {
+            id = ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
+              (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+            );
+            localStorage.setItem(DEVICE_KEY, id);
+          }
+          return id;
+        } catch {
+          return crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2);
+        }
+      }
+
+      async function draw() {
+        const deviceId = getOrCreateDeviceId();
+        console.log(deviceId)
+        try {
+          const res = await fetch("/api/draw", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deviceId, winRate: WIN_RATE }),
+          });
+          const data = await res.json();
+
+          console.log(data)
+
+          if (!data.ok) {
+            resultEl.textContent = "Error al procesar el sorteo";
+            resultEl.className = "result lose";
+            hintEl.textContent = "Inténtalo más tarde.";
+            return;
+          }
+
+          if (typeof data.remaining === "number") {
+            //leftEl.textContent = `Premios restantes: ${data.remaining}`;
+          }
+
+          if (data.won) {
+            // Mensaje ganador
+            resultEl.textContent = `Gracias por acompañarnos en este importante paso hacia #InnovaciónBanpaís
+
+              Iniciamos una nueva etapa con el respaldo de tu confianza y entrega.
+
+              Presenta este mensaje a integrantes del equipo de Mercadeo y recibirás un detalle especial.
+
+              Juntos, hacia adelante`;
+            resultEl.className = "result win";
+            hintEl.textContent = "";
+            confetti();
+          } 
+          else 
+          {
+              // Mensaje no ganador
+              resultEl.textContent = `Gracias por acompañarnos en este importante paso hacia #InnovaciónBanpaís
+
+                Iniciamos una nueva etapa con el respaldo de tu confianza y entrega.
+
+                Juntos, hacia adelante`;
+              resultEl.className = "result lose";
+              hintEl.textContent = "";
+          }
+
+
+        } catch {
+          
+          resultEl.textContent = "Error de conexión";
           resultEl.className = "result lose";
-          hintEl.textContent = "Inténtalo más tarde.";
-          return;
+          hintEl.textContent = "Revisa tu internet o vuelve más tarde.";
         }
-
-        if (typeof data.remaining === "number") {
-          leftEl.textContent = `Premios restantes: ${data.remaining}`;
-        }
-
-        if (data.won) {
-          // Mensaje ganador
-          resultEl.textContent =
-`Presenta este mensaje a uno de los miembros de Mercadeo Banpaís y recibe un detalle especial.
-
-Juntos, hacia adelante.`;
-          resultEl.className = "result win";
-          hintEl.textContent = "";
-          confetti();
-        } else {
-          // Mensaje no ganador
-          resultEl.textContent =
-`Gracias por acompañarnos en este importante paso hacia la evolución de nuestra institución.
-
-Tu asistencia añadió un valor significativo a este momento de transformación. Iniciamos una nueva etapa, fortalecidos por tu confianza y comprometidos con nuestra meta; Ser la primera opción para los centroamericanos y el grupo financiero más importante de la región.`;
-          resultEl.className = "result lose";
-          hintEl.textContent = "";
-        }
-      } catch {
-        resultEl.textContent = "Error de conexión";
-        resultEl.className = "result lose";
-        hintEl.textContent = "Revisa tu internet o vuelve más tarde.";
       }
-    }
 
-    function confetti() {
-      const n = 80;
-      for (let i = 0; i < n; i++) {
-        const piece = document.createElement("div");
-        piece.style.position = "fixed";
-        piece.style.left = Math.random() * 100 + "vw";
-        piece.style.top = "-10px";
-        piece.style.width = "8px";
-        piece.style.height = "14px";
-        piece.style.background = `hsl(${Math.random()*360}, 80%, 60%)`;
-        piece.style.opacity = ".9";
-        piece.style.transform = `rotate(${Math.random()*360}deg)`;
-        piece.style.borderRadius = "2px";
-        piece.style.pointerEvents = "none";
-        piece.style.zIndex = "9999";
-        document.body.appendChild(piece);
+      function confetti() {
+        const n = 80;
+        for (let i = 0; i < n; i++) {
+          const piece = document.createElement("div");
+          piece.style.position = "fixed";
+          piece.style.left = Math.random() * 100 + "vw";
+          piece.style.top = "-10px";
+          piece.style.width = "8px";
+          piece.style.height = "14px";
+          piece.style.background = `hsl(${Math.random() * 360}, 80%, 60%)`;
+          piece.style.opacity = ".9";
+          piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+          piece.style.borderRadius = "2px";
+          piece.style.pointerEvents = "none";
+          piece.style.zIndex = "9999";
+          document.body.appendChild(piece);
 
-        const endY = window.innerHeight + 20;
-        const duration = 1500 + Math.random()*1200;
-        const drift = (Math.random()-0.5)*120;
+          const endY = window.innerHeight + 20;
+          const duration = 1500 + Math.random() * 1200;
+          const drift = (Math.random() - 0.5) * 120;
 
-        piece.animate(
-          [
-            { transform: piece.style.transform, top: "-10px", left: piece.style.left },
-            { transform: `rotate(${Math.random()*720}deg)`, top: endY+"px", left: `calc(${piece.style.left} + ${drift}px)` }
-          ],
-          { duration, easing: "ease-in", fill: "forwards" }
-        ).onfinish = () => piece.remove();
+          piece.animate(
+            [
+              { transform: piece.style.transform, top: "-10px", left: piece.style.left },
+              { transform: `rotate(${Math.random() * 720}deg)`, top: endY + "px", left: `calc(${piece.style.left} + ${drift}px)` },
+            ],
+            { duration, easing: "ease-in", fill: "forwards" }
+          ).onfinish = () => piece.remove();
+        }
       }
-    }
 
-    draw();
-  </script>
-</body>
+      draw();
+    </script>
+  </body>
 </html>
